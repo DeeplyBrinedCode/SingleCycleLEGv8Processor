@@ -6,20 +6,20 @@ module RegisterFile (
 	input wire [4:0] ReadReg1, ReadReg2, WriteReg, 
 	input wire [31:0] WriteData,
 	input wire WriteCmd,
-	output wire [31:0] ReadData1, ReadData2
+	output reg [31:0] ReadData1, ReadData2
 );
 	// XZR Register
 	reg enable = 1'b0;
-	reg XZWrite = 1'b1;
+	reg XZRWrite = 1'b1;
 	reg [31:0] XZRReg = 32'h00000000;
-	reg [31:0] XZROut;
+	wire [31:0] XZROut;
 	// Write enables
 	wire x0_write, x1_write, x2_write, x3_write,
 		  x4_write, x5_write, x6_write, x7_write;
 	// Register Outputs
-	reg [31:0] x0_out, x1_out, x2_out, x3_out,
+	wire [31:0] x0_out, x1_out, x2_out, x3_out,
 				  x4_out, x5_out, x6_out, x7_out;
-	reg [31:0] Fail_read = 32'bz;
+	reg [31:0] Fail_read = 32'hzzzzzzzz;
 	
 	assign x0_write = (WriteCmd && WriteReg==5'b00000);
 	assign x1_write = (WriteCmd && WriteReg==5'b00001);
@@ -30,52 +30,43 @@ module RegisterFile (
 	assign x6_write = (WriteCmd && WriteReg==5'b00110);
 	assign x7_write = (WriteCmd && WriteReg==5'b00111);
 	
-	register32 XZR(
-		XZRReg,
-		enable,
-		enable,
-		enable
-		XZRWrite,
-		XZRWrite,
-		XZRWrite,
-		XZROut
-	);
+	Register32 XZR(XZRReg, enable, enable, enable, XZRWrite, XZRWrite, XZRWrite, XZROut);
+	Register32 X0(WriteData, enable, enable, enable, x0_write, x0_write, x0_write, x0_out);
+	Register32 X1(WriteData, enable, enable, enable, x1_write, x1_write, x1_write, x1_out);
+	Register32 X2(WriteData, enable, enable, enable, x2_write, x2_write, x2_write, x2_out);
+	Register32 X3(WriteData, enable, enable, enable, x3_write, x3_write, x3_write, x3_out);
+	Register32 X4(WriteData, enable, enable, enable, x4_write, x4_write, x4_write, x4_out);
+	Register32 X5(WriteData, enable, enable, enable, x5_write, x5_write, x5_write, x5_out);
+	Register32 X6(WriteData, enable, enable, enable, x6_write, x6_write, x6_write, x6_out);
+	Register32 X7(WriteData, enable, enable, enable, x7_write, x7_write, x7_write, x7_out);
 	
-	register32 X0(WriteData, enable, enable, enable, x0_write, x0_write, x0_write, x0_out);
-	register32 X1(WriteData, enable, enable, enable, x1_write, x1_write, x1_write, x1_out);
-	register32 X2(WriteData, enable, enable, enable, x2_write, x2_write, x2_write, x2_out);
-	register32 X3(WriteData, enable, enable, enable, x3_write, x3_write, x3_write, x3_out);
-	register32 X4(WriteData, enable, enable, enable, x4_write, x4_write, x4_write, x4_out);
-	register32 X5(WriteData, enable, enable, enable, x5_write, x5_write, x5_write, x5_out);
-	register32 X6(WriteData, enable, enable, enable, x6_write, x6_write, x6_write, x6_out);
-	register32 X7(WriteData, enable, enable, enable, x7_write, x7_write, x7_write, x7_out);
-	
-	case(ReadReg1)
-		5'b00000 : x0_out;
-		5'b00001 : x1_out;
-		5'b00010 : x2_out;
-		5'b00011 : x3_out;
-		5'b00100 : x4_out;
-		5'b00101 : x5_out;
-		5'b00110 : x6_out;
-		5'b00111 : x7_out;
-		5'b11111 : XZROut;
-		default : Fail_read;
-	endcase
-	
-	case(ReadReg2)
-		5'b00000 : x0_out;
-		5'b00001 : x1_out;
-		5'b00010 : x2_out;
-		5'b00011 : x3_out;
-		5'b00100 : x4_out;
-		5'b00101 : x5_out;
-		5'b00110 : x6_out;
-		5'b00111 : x7_out;
-		5'b11111 : XZROut;
-		default : Fail_read;
-	endcase
-	
+	always @(*) begin
+		case (ReadReg1)
+			5'b00000 : ReadData1 = x0_out;
+			5'b00001 : ReadData1 = x1_out;
+			5'b00010 : ReadData1 = x2_out;
+			5'b00011 : ReadData1 = x3_out;
+			5'b00100 : ReadData1 = x4_out;
+			5'b00101 : ReadData1 = x5_out;
+			5'b00110 : ReadData1 = x6_out;
+			5'b00111 : ReadData1 = x7_out;
+			5'b11111 : ReadData1 = XZROut;
+			default : ReadData1 = Fail_read;
+		endcase
+		
+		case (ReadReg2)
+			5'b00000 : ReadData2 = x0_out;
+			5'b00001 : ReadData2 = x1_out;
+			5'b00010 : ReadData2 = x2_out;
+			5'b00011 : ReadData2 = x3_out;
+			5'b00100 : ReadData2 = x4_out;
+			5'b00101 : ReadData2 = x5_out;
+			5'b00110 : ReadData2 = x6_out;
+			5'b00111 : ReadData2 = x7_out;
+			5'b11111 : ReadData2 = XZROut;
+			default : ReadData2 = Fail_read;
+		endcase
+	end
 endmodule
 
 //----------------------------------------------------------------------------------
@@ -128,8 +119,12 @@ module Register32 (
 	output wire [31:0] DataOut
 );
 
-	wire w32, w16, w8 = 1'b0;
-	wire out32, out16, out8 = 1'b1;
+	wire w32;
+	wire w16;
+	wire w8;
+	wire out32;
+	wire out16;
+	wire out8;
 	
 	assign w8 = writein8 | writein16 | writein32;
 	assign w16 = writein16 | writein32;
