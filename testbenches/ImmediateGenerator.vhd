@@ -1,343 +1,140 @@
--- =============================================================
--- ImmediateGenerator.vhd
--- LEGv8 Single-Cycle Processor – Immediate Generator (Module 4)
---
--- Extracts and sign-extends immediate fields from LEGv8 instructions:
---   ADDI  : 12-bit immediate (bits [21:10])
---   LDUR  : 9-bit offset    (bits [20:12])
---   STUR  : 9-bit offset    (bits [20:12])
---   CBZ   : 19-bit offset   (bits [23:5])
---   B     : 26-bit offset   (bits [25:0])
---
--- All outputs are sign-extended to 32 bits.
--- =============================================================
+module ImmediateGenerator (
+    input  wire [31:0] Instruction,
+    output reg  [31:0] ImmOut
+);
 
-library IEEE;
-use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL;
+    wire [9:0]  op10 = Instruction[31:22];
+    wire [10:0] op11 = Instruction[31:21];
+    wire [7:0]  op8  = Instruction[31:24];
+    wire [5:0]  op6  = Instruction[31:26];
 
-entity ImmediateGenerator is
-    port (
-        Instruction : in  std_logic_vector(31 downto 0);  -- Full 32-bit instruction word
-        ImmOut      : out std_logic_vector(31 downto 0)   -- Sign-extended 32-bit immediate
-    );
-end entity ImmediateGenerator;
+    // ADDI is matched on [31:22] because bit 21 overlaps with imm12[11]
+    localparam ADDI = 10'b1001000100;
+    localparam LDUR = 11'b11111000010;
+    localparam STUR = 11'b11111000000;
+    localparam CBZ  = 8'b10110100;
+    localparam B    = 6'b000101;
 
-architecture Behavioral of ImmediateGenerator is
-
-    -- Opcode field (bits [31:21]) – 11 bits
-    signal opcode : std_logic_vector(10 downto 0);
-
-    -- -------------------------------------------------------
-    -- LEGv8 Opcode Constants
-    -- -------------------------------------------------------
-    -- R-type (no immediate needed, included for completeness)
-    constant OP_ADD  : std_logic_vector(10 downto 0) := "10001011000"; -- ADD
-    constant OP_SUB  : std_logic_vector(10 downto 0) := "11001011000"; -- SUB
-    constant OP_AND  : std_logic_vector(10 downto 0) := "10001010000"; -- AND
-    constant OP_ORR  : std_logic_vector(10 downto 0) := "10101010000"; -- ORR
-
-    -- I-type
-    constant OP_ADDI : std_logic_vector(10 downto 0) := "10010001000"; -- ADDI
-
-    -- D-type
-    constant OP_LDUR : std_logic_vector(10 downto 0) := "11111000010"; -- LDUR
-    constant OP_STUR : std_logic_vector(10 downto 0) := "11111000000"; -- STUR
-
-    -- CB-type
-    constant OP_CBZ  : std_logic_vector(10 downto 0) := "10110100000"; -- CBZ (upper 8 match)
-
-    -- B-type
-    constant OP_B    : std_logic_vector(10 downto 0) := "00010100000"; -- B (upper 6 match)
-
-begin
-
-    opcode <= Instruction(31 downto 21);
-
-    process(Instruction, opcode)
-        variable raw_imm : std_logic_vector(31 downto 0);
-    begin
-        raw_imm := (others => '0'); -- default
-
-        -- -------------------------------------------------------
-        -- ADDI – I-type: bits [21:10] = 12-bit immediate
-        -- -------------------------------------------------------
-        if opcode = OP_ADDI then
-            -- Sign-extend 12-bit immediate
-            raw_imm(11 downto 0) := Instruction(21 downto 10);
-            if Instruction(21) = '1' then
-                raw_imm(31 downto 12) := (others => '1');
-            else
-                raw_imm(31 downto 12) := (others => '0');
-            end if;
-
-        -- -------------------------------------------------------
-        -- LDUR / STUR – D-type: bits [20:12] = 9-bit offset
-        -- -------------------------------------------------------
-        elsif opcode = OP_LDUR or opcode = OP_STUR then
-            -- Sign-extend 9-bit immediate
-            raw_imm(8 downto 0) := Instruction(20 downto 12);
-            if Instruction(20) = '1' then
-                raw_imm(31 downto 9) := (others => '1');
-            else
-                raw_imm(31 downto 9) := (others => '0');
-            end if;
-
-        -- -------------------------------------------------------
-        -- CBZ – CB-type: bits [23:5] = 19-bit PC-relative offset
-        -- Opcode is upper 8 bits: Instruction[31:24] = "10110100"
-        -- -------------------------------------------------------
-        elsif Instruction(31 downto 24) = "10110100" then
-            -- Sign-extend 19-bit immediate
-            raw_imm(18 downto 0) := Instruction(23 downto 5);
-            if Instruction(23) = '1' then
-                raw_imm(31 downto 19) := (others => '1');
-            else
-                raw_imm(31 downto 19) := (others => '0');
-            end if;
-
-        -- -------------------------------------------------------
-        -- B – B-type: bits [25:0] = 26-bit PC-relative offset
-        -- Opcode is upper 6 bits: Instruction[31:26] = "000101"
-        -- -------------------------------------------------------
-        elsif Instruction(31 downto 26) = "000101" then
-            -- Sign-extend 26-bit immediate
-            raw_imm(25 downto 0) := Instruction(25 downto 0);
-            if Instruction(25) = '1' then
-                raw_imm(31 downto 26) := (others => '1');
-            else
-                raw_imm(31 downto 26) := (others => '0');
-            end if;
-
-        -- -------------------------------------------------------
-        -- R-type or unknown – no immediate needed, output zero
-        -- -------------------------------------------------------
+    always @(*) begin
+        if (op10 == ADDI)
+            ImmOut = {{20{Instruction[21]}}, Instruction[21:10]};
+        else if (op11 == LDUR || op11 == STUR)
+            ImmOut = {{23{Instruction[20]}}, Instruction[20:12]};
+        else if (op8 == CBZ)
+            ImmOut = {{13{Instruction[23]}}, Instruction[23:5]};
+        else if (op6 == B)
+            ImmOut = {{6{Instruction[25]}}, Instruction[25:0]};
         else
-            raw_imm := (others => '0');
-        end if;
+            ImmOut = 32'b0;
+    end
 
-        ImmOut <= raw_imm;
-    end process;
-
-end architecture Behavioral;
+endmodule
 
 
--- =============================================================
--- Testbench: tImmediateGenerator.vhd
--- Verifies positive, negative, and zero immediates for each
--- supported instruction type (ADDI, LDUR, STUR, CBZ, B).
--- =============================================================
+`timescale 1ns/1ps
 
-library IEEE;
-use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL;
+module tImmediateGenerator;
 
-entity tImmediateGenerator is
-end entity tImmediateGenerator;
+    reg  [31:0] Instruction;
+    wire [31:0] ImmOut;
 
-architecture Sim of tImmediateGenerator is
+    ImmediateGenerator uut (
+        .Instruction (Instruction),
+        .ImmOut      (ImmOut)
+    );
 
-    component ImmediateGenerator
-        port (
-            Instruction : in  std_logic_vector(31 downto 0);
-            ImmOut      : out std_logic_vector(31 downto 0)
-        );
-    end component;
+    integer errors;
 
-    signal Instruction : std_logic_vector(31 downto 0) := (others => '0');
-    signal ImmOut      : std_logic_vector(31 downto 0);
+    initial begin
+        errors = 0;
 
-    -- Helper: build a D-type instruction word (LDUR/STUR)
-    --   opcode[31:21], offset[20:12], op2[11:10], Rn[9:5], Rt[4:0]
-    function make_d_type(
-        op     : std_logic_vector(10 downto 0);
-        offset : std_logic_vector(8  downto 0);
-        op2    : std_logic_vector(1  downto 0);
-        rn     : std_logic_vector(4  downto 0);
-        rt     : std_logic_vector(4  downto 0))
-    return std_logic_vector is
-    begin
-        return op & offset & op2 & rn & rt;
-    end function;
+        // LDUR X4, [X1, #8] -- offset = +8, expected 0x00000008
+        Instruction = {11'b11111000010, 9'b000001000, 2'b00, 5'b00001, 5'b00100};
+        #20;
+        if (ImmOut !== 32'h00000008) begin
+            $display("FAIL LDUR +8: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-    -- Helper: build an I-type instruction word (ADDI)
-    --   opcode[31:21], imm12[21:10], Rn[9:5], Rd[4:0]
-    function make_i_type(
-        op   : std_logic_vector(10 downto 0);
-        imm  : std_logic_vector(11 downto 0);
-        rn   : std_logic_vector(4  downto 0);
-        rd   : std_logic_vector(4  downto 0))
-    return std_logic_vector is
-    begin
-        return op & imm & rn & rd;
-    end function;
+        // LDUR negative offset -4, expected 0xFFFFFFFC
+        Instruction = {11'b11111000010, 9'b111111100, 2'b00, 5'b00001, 5'b00100};
+        #20;
+        if (ImmOut !== 32'hFFFFFFFC) begin
+            $display("FAIL LDUR -4: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-    -- Helper: build a CB-type instruction word (CBZ)
-    --   opcode[31:24], offset19[23:5], Rt[4:0]
-    function make_cb_type(
-        op     : std_logic_vector(7  downto 0);
-        offset : std_logic_vector(18 downto 0);
-        rt     : std_logic_vector(4  downto 0))
-    return std_logic_vector is
-    begin
-        return op & offset & rt;
-    end function;
+        // STUR X3, [X1, #16] -- offset = +16, expected 0x00000010
+        Instruction = {11'b11111000000, 9'b000010000, 2'b00, 5'b00001, 5'b00011};
+        #20;
+        if (ImmOut !== 32'h00000010) begin
+            $display("FAIL STUR +16: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-    -- Helper: build a B-type instruction word (B)
-    --   opcode[31:26], offset26[25:0]
-    function make_b_type(
-        op     : std_logic_vector(5  downto 0);
-        offset : std_logic_vector(25 downto 0))
-    return std_logic_vector is
-    begin
-        return op & offset;
-    end function;
+        // ADDI X2, X1, #100 -- expected 0x00000064
+        // I-type concat: {op[31:22], imm12, Rn, Rd} = 10+12+5+5 = 32 bits
+        Instruction = {10'b1001000100, 12'd100, 5'b00001, 5'b00010};
+        #20;
+        if (ImmOut !== 32'h00000064) begin
+            $display("FAIL ADDI +100: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-begin
+        // ADDI negative immediate -1, expected 0xFFFFFFFF
+        Instruction = {10'b1001000100, 12'hFFF, 5'b00001, 5'b00010};
+        #20;
+        if (ImmOut !== 32'hFFFFFFFF) begin
+            $display("FAIL ADDI -1: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-    uut : ImmediateGenerator
-        port map (Instruction => Instruction, ImmOut => ImmOut);
+        // CBZ X0, #4 -- expected 0x00000004
+        Instruction = {8'b10110100, 19'd4, 5'b00000};
+        #20;
+        if (ImmOut !== 32'h00000004) begin
+            $display("FAIL CBZ +4: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-    stim : process
-    begin
-        -- -------------------------------------------------------
-        -- Test 1: LDUR X4, [X1, #8]   → 9-bit offset = +8
-        --   Expected ImmOut = 0x00000008
-        -- -------------------------------------------------------
-        Instruction <= make_d_type(
-            "11111000010",          -- LDUR opcode
-            "000001000",            -- offset = 8
-            "00",
-            "00001",                -- X1
-            "00100");               -- X4
-        wait for 20 ns;
-        assert ImmOut = x"00000008"
-            report "FAIL Test1 LDUR +8: got " & integer'image(to_integer(unsigned(ImmOut)))
-            severity error;
+        // CBZ negative offset -8, expected 0xFFFFFFF8
+        Instruction = {8'b10110100, 19'b1111111111111111000, 5'b00000};
+        #20;
+        if (ImmOut !== 32'hFFFFFFF8) begin
+            $display("FAIL CBZ -8: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-        -- -------------------------------------------------------
-        -- Test 2: LDUR with negative offset (#-4)
-        --   9-bit two's complement of -4 = "111111100"
-        --   Expected ImmOut = 0xFFFFFFFC
-        -- -------------------------------------------------------
-        Instruction <= make_d_type(
-            "11111000010",
-            "111111100",            -- -4 in 9-bit two's complement
-            "00",
-            "00001",
-            "00100");
-        wait for 20 ns;
-        assert ImmOut = x"FFFFFFFC"
-            report "FAIL Test2 LDUR -4: got " & integer'image(to_integer(signed(ImmOut)))
-            severity error;
+        // B #12 -- expected 0x0000000C
+        Instruction = {6'b000101, 26'd12};
+        #20;
+        if (ImmOut !== 32'h0000000C) begin
+            $display("FAIL B +12: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-        -- -------------------------------------------------------
-        -- Test 3: STUR X3, [X1, #16]  → offset = +16
-        --   Expected ImmOut = 0x00000010
-        -- -------------------------------------------------------
-        Instruction <= make_d_type(
-            "11111000000",          -- STUR opcode
-            "000010000",            -- offset = 16
-            "00",
-            "00001",
-            "00011");
-        wait for 20 ns;
-        assert ImmOut = x"00000010"
-            report "FAIL Test3 STUR +16"
-            severity error;
+        // B negative offset -4, expected 0xFFFFFFFC
+        Instruction = {6'b000101, 26'b11111111111111111111111100};
+        #20;
+        if (ImmOut !== 32'hFFFFFFFC) begin
+            $display("FAIL B -4: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-        -- -------------------------------------------------------
-        -- Test 4: ADDI X2, X1, #100  → 12-bit imm = 100
-        --   Expected ImmOut = 0x00000064
-        -- -------------------------------------------------------
-        Instruction <= make_i_type(
-            "10010001000",          -- ADDI opcode
-            "000001100100",         -- 100 in binary (12 bits)
-            "00001",                -- X1
-            "00010");               -- X2
-        wait for 20 ns;
-        assert ImmOut = x"00000064"
-            report "FAIL Test4 ADDI +100"
-            severity error;
+        // R-type ADD -- no immediate, expected 0x00000000
+        Instruction = {11'b10001011000, 5'b00010, 6'b000000, 5'b00001, 5'b00011};
+        #20;
+        if (ImmOut !== 32'h00000000) begin
+            $display("FAIL R-type: got %h", ImmOut);
+            errors = errors + 1;
+        end
 
-        -- -------------------------------------------------------
-        -- Test 5: ADDI with negative 12-bit immediate (#-1)
-        --   12-bit two's complement of -1 = "111111111111"
-        --   Expected ImmOut = 0xFFFFFFFF
-        -- -------------------------------------------------------
-        Instruction <= make_i_type(
-            "10010001000",
-            "111111111111",         -- -1 in 12-bit two's complement
-            "00001",
-            "00010");
-        wait for 20 ns;
-        assert ImmOut = x"FFFFFFFF"
-            report "FAIL Test5 ADDI -1"
-            severity error;
+        if (errors == 0)
+            $display("ImmediateGenerator: all tests passed.");
+        else
+            $display("ImmediateGenerator: %0d test(s) failed.", errors);
 
-        -- -------------------------------------------------------
-        -- Test 6: CBZ X0, #4  → 19-bit offset = 4
-        --   Expected ImmOut = 0x00000004
-        -- -------------------------------------------------------
-        Instruction <= make_cb_type(
-            "10110100",             -- CBZ opcode (upper 8 bits)
-            "0000000000000000100",  -- offset = 4 (19 bits)
-            "00000");               -- X0
-        wait for 20 ns;
-        assert ImmOut = x"00000004"
-            report "FAIL Test6 CBZ +4"
-            severity error;
+        $finish;
+    end
 
-        -- -------------------------------------------------------
-        -- Test 7: CBZ with negative offset (#-8)
-        --   19-bit two's complement of -8 = "1111111111111111000"
-        --   Expected ImmOut = 0xFFFFFFF8
-        -- -------------------------------------------------------
-        Instruction <= make_cb_type(
-            "10110100",
-            "1111111111111111000",  -- -8 in 19-bit two's complement
-            "00000");
-        wait for 20 ns;
-        assert ImmOut = x"FFFFFFF8"
-            report "FAIL Test7 CBZ -8"
-            severity error;
-
-        -- -------------------------------------------------------
-        -- Test 8: B #12  → 26-bit offset = 12
-        --   Expected ImmOut = 0x0000000C
-        -- -------------------------------------------------------
-        Instruction <= make_b_type(
-            "000101",               -- B opcode (upper 6 bits)
-            "00000000000000000000001100"); -- offset = 12 (26 bits)
-        wait for 20 ns;
-        assert ImmOut = x"0000000C"
-            report "FAIL Test8 B +12"
-            severity error;
-
-        -- -------------------------------------------------------
-        -- Test 9: B with negative offset (#-4)
-        --   26-bit two's complement of -4 = "11111111111111111111111100"
-        --   Expected ImmOut = 0xFFFFFFFC
-        -- -------------------------------------------------------
-        Instruction <= make_b_type(
-            "000101",
-            "11111111111111111111111100"); -- -4 in 26-bit two's complement
-        wait for 20 ns;
-        assert ImmOut = x"FFFFFFFC"
-            report "FAIL Test9 B -4"
-            severity error;
-
-        -- -------------------------------------------------------
-        -- Test 10: R-type ADD → no immediate, expect 0
-        -- -------------------------------------------------------
-        Instruction <= "10001011000" & "00010" & "000000" & "00001" & "00011"; -- ADD X3,X1,X2
-        wait for 20 ns;
-        assert ImmOut = x"00000000"
-            report "FAIL Test10 R-type ADD should give 0"
-            severity error;
-
-        report "ImmediateGenerator: all tests passed." severity note;
-        wait;
-    end process;
-
-end architecture Sim;
+endmodule
