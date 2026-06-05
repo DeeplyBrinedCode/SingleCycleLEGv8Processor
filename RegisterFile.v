@@ -8,7 +8,74 @@ module RegisterFile (
 	input wire WriteCmd,
 	output wire [31:0] ReadData1, ReadData2
 );
-
+	// XZR Register
+	reg enable = 1'b0;
+	reg XZWrite = 1'b1;
+	reg [31:0] XZRReg = 32'h00000000;
+	reg [31:0] XZROut;
+	// Write enables
+	wire x0_write, x1_write, x2_write, x3_write,
+		  x4_write, x5_write, x6_write, x7_write;
+	// Register Outputs
+	reg [31:0] x0_out, x1_out, x2_out, x3_out,
+				  x4_out, x5_out, x6_out, x7_out;
+	reg [31:0] Fail_read = 32'bz;
+	
+	assign x0_write = (WriteCmd && WriteReg==5'b00000);
+	assign x1_write = (WriteCmd && WriteReg==5'b00001);
+	assign x2_write = (WriteCmd && WriteReg==5'b00010);
+	assign x3_write = (WriteCmd && WriteReg==5'b00011);
+	assign x4_write = (WriteCmd && WriteReg==5'b00100);
+	assign x5_write = (WriteCmd && WriteReg==5'b00101);
+	assign x6_write = (WriteCmd && WriteReg==5'b00110);
+	assign x7_write = (WriteCmd && WriteReg==5'b00111);
+	
+	register32 XZR(
+		XZRReg,
+		enable,
+		enable,
+		enable
+		XZRWrite,
+		XZRWrite,
+		XZRWrite,
+		XZROut
+	);
+	
+	register32 X0(WriteData, enable, enable, enable, x0_write, x0_write, x0_write, x0_out);
+	register32 X1(WriteData, enable, enable, enable, x1_write, x1_write, x1_write, x1_out);
+	register32 X2(WriteData, enable, enable, enable, x2_write, x2_write, x2_write, x2_out);
+	register32 X3(WriteData, enable, enable, enable, x3_write, x3_write, x3_write, x3_out);
+	register32 X4(WriteData, enable, enable, enable, x4_write, x4_write, x4_write, x4_out);
+	register32 X5(WriteData, enable, enable, enable, x5_write, x5_write, x5_write, x5_out);
+	register32 X6(WriteData, enable, enable, enable, x6_write, x6_write, x6_write, x6_out);
+	register32 X7(WriteData, enable, enable, enable, x7_write, x7_write, x7_write, x7_out);
+	
+	case(ReadReg1)
+		5'b00000 : x0_out;
+		5'b00001 : x1_out;
+		5'b00010 : x2_out;
+		5'b00011 : x3_out;
+		5'b00100 : x4_out;
+		5'b00101 : x5_out;
+		5'b00110 : x6_out;
+		5'b00111 : x7_out;
+		5'b11111 : XZROut;
+		default : Fail_read;
+	endcase
+	
+	case(ReadReg2)
+		5'b00000 : x0_out;
+		5'b00001 : x1_out;
+		5'b00010 : x2_out;
+		5'b00011 : x3_out;
+		5'b00100 : x4_out;
+		5'b00101 : x5_out;
+		5'b00110 : x6_out;
+		5'b00111 : x7_out;
+		5'b11111 : XZROut;
+		default : Fail_read;
+	endcase
+	
 endmodule
 
 //----------------------------------------------------------------------------------
