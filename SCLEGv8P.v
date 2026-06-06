@@ -17,10 +17,15 @@ module SCLEGv8P (
 	// Register File
 	//----------------------------------------------------------------------------------
 	
-	reg [4:0] RF_ReadReg1, RF_ReadReg2, RF_WriteReg;
-	reg [31:0] RF_WriteData;
+	wire [4:0] RF_ReadReg1, RF_ReadReg2, RF_WriteReg;
+	wire [31:0] RF_WriteData;
 	wire [31:0] RF_ReadData1, RF_ReadData2;
-	reg RF_WriteCmd;
+	reg RF_WriteCmd; // To be pulsed by a combinational block for the ALU
+	
+	assign RF_ReadReg1 = Instruction[9:5]; // First Source Register
+	assign RF_ReadReg2 = Instruction[20:16]; // Second Source Register
+	assign RF_WriteReg = Instruction[4:0]; // Destination Register
+	assign RF_WriteData = ALUResult;
 	
 	RegisterFile RF (
 		RF_ReadReg1, RF_ReadReg2, RF_WriteReg, RF_WriteData,
@@ -36,7 +41,7 @@ module SCLEGv8P (
 	// Register Update
 	//----------------------------------------------------------------------------------
 	
-	always @(posedge clk) begin
+	always @(posedge clk) begin // Read on positive edge
 		case (reset)
 			1'b1: begin
 				PC          <= 32'h00000000;
@@ -56,20 +61,19 @@ module SCLEGv8P (
 		endcase
 		// Check opcode
 		case(Instruction[31:20])
-			12'h458, 12'h658, : begin // R-Format Opcodes
-				RF_ReadReg1 <= Instruction[9:5]; // First Source Register
-				RF_ReadReg2 <= Instruction[20:16]; // Second Source Register
-				RF_WriteReg <= Instruction[4:0]; // Destination Register
-				RF_WriteData <= ALUResult;
-				RF_WriteCmd <= 1'b1;
+			12'h458, 12'h658: begin // R-Format Opcode
+				ReadData1 <= RF_ReadData1;
+				ReadData2 <= RF_ReadData2;
+			end
+			12'h488, 12'h489, 12'h688, 12'h689: begin // I-Format Opcodes
+				ReadData1 <= RF_ReadData1;
+				ReadData2 <= {{20{1'b0}}, Instruction[21:10]};
 			end
 			default: begin
-				RF_ReadReg1 <= 5'bzzzzz;
-				RF_ReadReg2 <= 5'bzzzzz;
-				RF_WriteReg <= 5'bzzzzz;
-				RF_WriteData <= 32'hzzzzzzzz;
-				RF_WriteCmd <= 1'bz;
+				ReadData1 <= 32'hzzzzzzzz;
+				ReadData2 <= 32'hzzzzzzzz;
 			end
 		endcase
 	end
+	
 endmodule
