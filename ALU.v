@@ -2,11 +2,9 @@
 module ArLoUn  (
 	input [4:0] Ctrl,
 	input [7:0] oppA, oppB,
-	output reg Z
+	output reg Z,
+	output reg[7:0] result
 	);
-	
-	
-	reg[7:0] result;
 	
 	always @(*) begin
 		case(Ctrl)
