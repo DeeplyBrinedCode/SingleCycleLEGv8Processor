@@ -12,6 +12,7 @@ module ArLoUn  (
 			5'b00001:	result = oppA - oppB;
 			5'b00010:	result = oppA & oppB;
 			5'b00011: 	result = oppA | oppB;
+			5'b00100:	result = !(oppA & oppB);
 			default: result = 0;
 		endcase
 	if (result == 0) 
