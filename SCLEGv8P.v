@@ -74,7 +74,7 @@ module SCLEGv8P (
 	wire [31:0] ALUResultWire;
 	wire IorR;
 	
-	assign Immediate = {{20{1'b0}}, Instruction[21:10]};
+	assign Immediate = {32{Instruction[21]}} ^ {{20{1'b0}}, Instruction[20:10]} + Instruction[21];
 	assign ALUOp1 = ReadData1;
 	assign ALUOp2 = (IorR) ? Immediate : ReadData2;
 	assign IorR = (Instruction[31:21] == 11'h488 || Instruction[31:21] == 11'h489 || Instruction[31:21] == 11'h688 || Instruction[31:21] == 11'h689);
@@ -98,10 +98,10 @@ module SCLEGv8P (
 			end
 			default: begin
 				casex (Instruction[31:24])
-					8'b000101xx: PC <= {{6{1'b0}}, Instruction[25:0]}; // If opcode == B
+					8'b000101xx: PC <= PC + ({25{Instruction[25]}} ^ Instruction[24:0]) + Instruction[25]; // If opcode == B
 					8'hb4: begin // If opcode == CBZ
 						case(CBZ)
-							1'b0: PC <= {Instruction[23:5]};
+							1'b0: PC <= PC <= PC + ({18{Instruction[23]}} ^ Instruction[22:5]) + Instruction[23];
 							default: PC <= PC + 32'h00000004;
 						endcase
 					end
