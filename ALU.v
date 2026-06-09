@@ -1,9 +1,9 @@
 
 module ArLoUn  (
 	input [4:0] Ctrl,
-	input [7:0] oppA, oppB,
+	input [31:0] oppA, oppB,
 	output reg Z,
-	output reg[7:0] result
+	output reg[31:0] result
 	);
 	
 	always @(*) begin
