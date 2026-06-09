@@ -13,9 +13,9 @@ module ArLoUn  (
 			5'b00010:	ALU_Result = oppA & oppB;
 			5'b00011: 	ALU_Result = oppA | oppB;
 			5'b00100:	ALU_Result = !(oppA & oppB);
-			default: result = 0;
+			default: ALU_Result = 0;
 		endcase
-	if (result == 0) 
+	if (ALU_Result == 0) 
 		Z = 1'b1;
 	end
 endmodule
