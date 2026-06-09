@@ -2,16 +2,18 @@ module SCLEGv8P (
 	input wire clk, reset
 	);
 	
-	reg [31:0] PC, Instruction, ReadData1, ReadData2, Immediate, ALUResult, MemData;
-	wire [31:0] PC_wire, Instruction_wire, RD1_wire, RD2_wire;
+	reg [31:0] PC, ReadData1, ReadData2, ALUResult;
+	wire [31:0] PC_wire, Instruction, RD1_wire, RD2_wire;
 	
 	assign PC_wire = PC;
+	
+	wire [31:0] RAM_DataIn, RAM_DataOut; // Declarations for RAM
 	
 	//----------------------------------------------------------------------------------
 	// Instruction Memory
 	//----------------------------------------------------------------------------------
 	
-	InstructionMemory IM (PC_wire, Instruction_wire);
+	InstructionMemory IM (PC_wire, Instruction);
 	
 	//----------------------------------------------------------------------------------
 	// Register File
@@ -19,59 +21,92 @@ module SCLEGv8P (
 	
 	wire [4:0] RF_ReadReg1, RF_ReadReg2, RF_WriteReg;
 	wire [31:0] RF_WriteData;
-	wire [31:0] RF_ReadData1, RF_ReadData2;
-	reg RF_WriteCmd; // To be pulsed by a combinational block for the ALU
+	wire [31:0] ReadData1W, ReadData2W;
+	wire RegisterWrite; // Whether or not the current instruction should write
+	wire WriteCmd, CBZ;
 	
 	assign RF_ReadReg1 = Instruction[9:5]; // First Source Register
-	assign RF_ReadReg2 = Instruction[20:16]; // Second Source Register
+	assign RF_ReadReg2 = (Instruction[31:21] == 11'h7c0 || Instruction[31:24] == 8'hB4) ? Instruction[4:0] : Instruction[20:16]; // Second Source Register
 	assign RF_WriteReg = Instruction[4:0]; // Destination Register
-	assign RF_WriteData = ALUResult;
+	assign RF_WriteData = (Instruction[31:21] == 11'h7C2) ? RAM_DataOut : ALUResult;
+	assign RegisterWrite = (Instruction[31:21] == 11'h458 ||
+									Instruction[31:21] == 11'h658 ||
+									Instruction[31:21] == 11'h450 ||
+									Instruction[31:21] == 11'h550 ||
+									Instruction[31:21] == 11'h488 ||
+									Instruction[31:21] == 11'h489 ||
+									Instruction[31:21] == 11'h688 ||
+									Instruction[31:21] == 11'h689 ||
+									Instruction[31:21] == 11'h450 ||
+									Instruction[31:21] == 11'h550 ||
+									Instruction[31:21] == 11'h4bc ||
+									Instruction[31:21] == 11'h7c2);
+	assign WriteCmd = ~clk & RegisterWrite; // If IW reg is high, will write on negative edge of clock
+	assign CBZ = ~(ReadData2W == 32'h00000000);
 	
 	RegisterFile RF (
 		RF_ReadReg1, RF_ReadReg2, RF_WriteReg, RF_WriteData,
-		RF_WriteCmd, RF_ReadData1, RF_ReadData2
+		WriteCmd, ReadData1W, ReadData2W
 	);
+	
+	//----------------------------------------------------------------------------------
+	// RAM
+	//----------------------------------------------------------------------------------
+	
+	wire RAM_OE, RAM_WE;
+	wire [29:0] RAM_Address;
+	wire RAM_Write, RAM_Read;
+	
+	assign RAM_Write = (Instruction[31:21] == 11'h7c0); // Whether or not the RAM should be written to
+	assign RAM_WE = ~clk & RAM_Write;
+	assign RAM_OE = ~(Instruction[31:21] == 11'h7c2); // Whether or not the RAM should be read from
+	assign RAM_Address = ReadData1W[28:0] + Instruction[20:12];
+	assign RAM_DataIn = ReadData2W;
+	
+	Memory RAM (reset, clk, RAM_OE, RAM_WE, RAM_Address, RAM_DataIn, RAM_DataOut);
 	
 	//----------------------------------------------------------------------------------
 	// ALU
 	//----------------------------------------------------------------------------------
 	
+	wire [31:0] ALUOp1, ALUOp2, Immediate;
+	wire ZeroFlag;
+	wire [31:0] ALUResultWire;
+	wire IorR;
+	
+	assign Immediate = {{20{1'b0}}, Instruction[21:10]};
+	assign ALUOp1 = ReadData1;
+	assign ALUOp2 = (IorR) ? Immediate : ReadData2;
+	assign IorR = (Instruction[31:21] == 11'h488 || Instruction[31:21] == 11'h489 || Instruction[31:21] == 11'h688 || Instruction[31:21] == 11'h689);
+	
+	ArLoUn ALU (Instruction[31:21], ALUOp1, ALUOp2, ZeroFlag, ALUResultWire);
 	
 	//----------------------------------------------------------------------------------
 	// Register Update
 	//----------------------------------------------------------------------------------
 	
+	always @(*) begin
+		ReadData1 <= ReadData1W;
+		ReadData2 <= ReadData2W;
+		ALUResult <= ALUResultWire;
+	end
+	
 	always @(posedge clk) begin // Read on positive edge
 		case (reset)
 			1'b1: begin
-				PC          <= 32'h00000000;
-				Instruction <= 32'h00000000;
-				ReadData1   <= 32'h00000000;
-				ReadData2   <= 32'h00000000;
-				Immediate   <= 32'h00000000;
-				ALUResult   <= 32'h00000000;
-				MemData     <= 32'h00000000;
+				PC <= 32'h00000000;
 			end
 			default: begin
-				PC <= PC + 32'h00000100;
-				Instruction <= Instruction_wire;
-				ReadData1 <= RF_ReadData1;
-				ReadData2 <= RF_ReadData2;
-			end
-		endcase
-		// Check opcode
-		case(Instruction[31:20])
-			12'h458, 12'h658: begin // R-Format Opcode
-				ReadData1 <= RF_ReadData1;
-				ReadData2 <= RF_ReadData2;
-			end
-			12'h488, 12'h489, 12'h688, 12'h689: begin // I-Format Opcodes
-				ReadData1 <= RF_ReadData1;
-				ReadData2 <= {{20{1'b0}}, Instruction[21:10]};
-			end
-			default: begin
-				ReadData1 <= 32'hzzzzzzzz;
-				ReadData2 <= 32'hzzzzzzzz;
+				casex (Instruction[31:24])
+					8'b000101xx: PC <= {{6{1'b0}}, Instruction[25:0]}; // If opcode == B
+					8'hb4: begin // If opcode == CBZ
+						case(CBZ)
+							1'b0: PC <= {Instruction[23:5]};
+							default: PC <= PC + 32'h00000004;
+						endcase
+					end
+					default: PC <= PC + 32'h00000004; // Increment program counter
+				endcase
 			end
 		endcase
 	end
